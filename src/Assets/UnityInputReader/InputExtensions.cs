@@ -17,18 +17,24 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
             var keyboardInputs = Keyboard.current.allControls;
             var mouseInputs = Mouse.current.allControls;
             var sensorInputs = InputSystem.devices;
-
             return input switch
             {
                 IKeyboardInput keyBoardInput => keyBoardInput switch
                 {
-                    KeyBoardInput k => k.Symbol,
-                    _ => keyBoardInput.Name switch
+                    KeyBoardInput k => k.Symbol switch
                     {
-                        "Backspace" => "Backspace",
+                        "" => ",", // Typo in comma
+                        "<-" => "Backspace",
                         "Caps" => "Caps Lock",
-                        _ => keyBoardInput.Name
-                    }
+                        " " => k.Name,
+                        "˂" => "Left",
+                        "˄" => "Up",
+                        "˃" => "Right",
+                        "˅" => "Down",
+                        _ => k.Symbol
+                    },
+                    KeyboardCombination => keyBoardInput.Name,
+                    _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
                 },
                 _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
             };
