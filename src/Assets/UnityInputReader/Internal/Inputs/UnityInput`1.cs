@@ -14,6 +14,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
     {
         #region Variables
 
+        public TInput DeviceInput { get; }
+
         public TInputControl InputControl { get; }
 
         #endregion
@@ -21,8 +23,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
         #region Constructors
 
         public UnityInput(TInput input, TInputControl inputControl)
-            : base(input)
         {
+            DeviceInput = input;
             InputControl = inputControl;
         }
 

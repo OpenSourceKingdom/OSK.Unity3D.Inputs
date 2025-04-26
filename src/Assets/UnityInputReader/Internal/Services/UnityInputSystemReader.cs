@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
+using UnityEngine.Windows;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 {
@@ -21,7 +22,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
         #region Variables
 
         private readonly InputDeviceIdentifier _deviceIdentifier;
-        private readonly Dictionary<string, UnityInput> _inputControlsLookup;
+        private readonly Dictionary<IInput, UnityInput> _inputControlsLookup;
 
         #endregion
 
@@ -63,7 +64,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 
                     return new
                     {
-                        IsTriggered = _inputControlsLookup.TryGetValue(inputActionPair.InputName, out var unityInput)
+                        IsTriggered = _inputControlsLookup.TryGetValue(inputActionPair.DeviceInput, out var unityInput)
                             && unityInput.TryGetInputPhase(out currentPhase) 
                             && inputActionPair.TriggerPhase.HasFlag(currentPhase),
                         UnityInput = unityInput,
@@ -73,6 +74,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                 })
                 .Where(v => v.IsTriggered);
 
+
+
             foreach (var activeInputActionPair in activeInputActionPairs)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -81,7 +84,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                 }
 
                 ActivateInput(context, activeInputActionPair.CurrentPhase, activeInputActionPair.Pair,
-                    _inputControlsLookup[activeInputActionPair.Pair.InputName]);
+                    _inputControlsLookup[activeInputActionPair.Pair.DeviceInput]);
             }
 
             return Task.CompletedTask;
@@ -99,43 +102,58 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
         /// <param name="inputs">The actual inputs that are being read by the input manager</param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        private Dictionary<string, UnityInput> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
+        private Dictionary<IInput, UnityInput> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
             IEnumerable<IInput> inputs) 
         {
             var device = InputSystem.devices.FirstOrDefault(inputDevice => inputDevice.deviceId == deviceIdentifier.DeviceId);
             if (device is null)
             {
-                return new Dictionary<string, UnityInput>();
+                return new Dictionary<IInput, UnityInput>();
             }
 
-            var unityControllerLookup = new Dictionary<string, UnityInput>();
-            var deviceInputLookup = device.allControls.GroupBy(control => control.displayName)
+            var deviceInputLookup = new Dictionary<IInput, UnityInput>();
+            var inputControlLookup = device.allControls.GroupBy(control => control.displayName)
                 .Select(controlGroup => controlGroup.First())
                 .ToDictionary(control => control.displayName);
+
             foreach (var input in inputs)
             {
-                var inputKey = input.GetUnityInputName();
-                if (!deviceInputLookup.TryGetValue(inputKey, out var inputControl))
+                UnityInput unityInput;
+                switch (input)
                 {
-                    var invalidInputs = inputs.Where(i => !deviceInputLookup.TryGetValue(i.GetUnityInputName(), out _)).ToList();
-                    Debug.Log("The following inputs did not have matches: " + string.Join(", ", invalidInputs.Select(i => i.Name)));
-                    throw new InvalidOperationException($"The expected input {input.Name} was not found in the device input lookup");
+                    case CombinationInput combinationInput:
+                        var combinedInputs = combinationInput.Inputs.Select(deviceInput => GetUnityInput(inputControlLookup, deviceInput));
+                        unityInput = new UnityCombinationInput(combinedInputs);
+                        break;
+                    default:
+                        unityInput = GetUnityInput(inputControlLookup, input);
+                        break;
                 }
 
-                unityControllerLookup[inputKey] = input switch
-                {
-                    MouseScrollInput scrollInput => new UnityDeltaInput(scrollInput, (DeltaControl) inputControl),
-                    AnalogInput analogInput => new UnityStickInput(analogInput, (StickControl) inputControl),
-                    HardwareInput hardwareInput => new UnityButtonInput(hardwareInput, (ButtonControl) inputControl),
-                    TouchInput touchInput => new UnityTouchInput(touchInput, (TouchControl) inputControl),
-                    SensorInput sensorInput => new UnitySensorInput(sensorInput, (Sensor)  inputControl),
-                    _ => throw new InvalidOperationException($"A valid input to unity input mapping did not exist for the input {input.Name} which is of type {input.GetType().FullName}.^")
-                };
+                deviceInputLookup[input] = unityInput;
             }
 
-            return unityControllerLookup;
+            return deviceInputLookup;
         }
 
+        private UnityInput GetUnityInput(Dictionary<string, InputControl> inputControlLookup, IInput deviceInput)
+        {
+            var inputKey = deviceInput.GetUnityInputName();
+            if (!inputControlLookup.TryGetValue(inputKey, out var inputControl))
+            {
+                throw new InvalidOperationException($"The expected input {deviceInput.Name} was not found in the device input lookup");
+            }
+
+            return deviceInput switch
+            {
+                MouseScrollInput scrollInput => new UnityDeltaInput(scrollInput, (DeltaControl)inputControl),
+                AnalogInput analogInput => new UnityStickInput(analogInput, (StickControl)inputControl),
+                HardwareInput hardwareInput => new UnityButtonInput(hardwareInput, (ButtonControl)inputControl),
+                TouchInput touchInput => new UnityTouchInput(touchInput, (TouchControl)inputControl),
+                SensorInput sensorInput => new UnitySensorInput(sensorInput, (Sensor)inputControl),
+                _ => throw new InvalidOperationException($"A valid input to unity input mapping did not exist for the input {deviceInput.Name} which is of type {deviceInput.GetType().FullName}.^")
+            };
+        }
         private void ActivateInput(UserInputReadContext context, InputPhase triggerPhase,
             InputActionMapPair inputActionMapPair, UnityInput input)
         {

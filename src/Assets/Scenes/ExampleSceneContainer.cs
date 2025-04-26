@@ -4,10 +4,7 @@ using OSK.Inputs;
 using OSK.Inputs.Models.Configuration;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Scripts;
-using System.Collections;
-using System.Collections.Generic;
 using System.Threading.Tasks;
-using UnityEngine;
 
 public class ExampleSceneContainer : SceneContainer
 {
@@ -27,7 +24,7 @@ public class ExampleSceneContainer : SceneContainer
                 {
                     scheme.UseKeyboard(keyboard =>
                     {
-                        keyboard.AssignStartAction(Keyboard.W, "Triggered");
+                        keyboard.AssignStartAction(Keyboard.ExclamationPoint, "Triggered");
                     });
                 });
             });
