@@ -17,14 +17,22 @@ public class ExampleSceneContainer : SceneContainer
         services.AddUnityInputs(static builder =>
         {
             builder.AddKeyboard();
+            builder.AddMouse();
+
             builder.AddInputDefinition("Test", definition =>
             {
                 definition.AddAction("Triggered", null, @event => CompletedTask);
+                definition.AddAction("Triggered2", null, @event => CompletedTask);
+
                 definition.AddInputScheme("default", scheme =>
                 {
                     scheme.UseKeyboard(keyboard =>
                     {
                         keyboard.AssignStartAction(Keyboard.ExclamationPoint, "Triggered");
+                    });
+                    scheme.UseMouse(mouse =>
+                    {
+                        mouse.AssignEndAction(Mouse.LeftClick, "Triggered2");
                     });
                 });
             });

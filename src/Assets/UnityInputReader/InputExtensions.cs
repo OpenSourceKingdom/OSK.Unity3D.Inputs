@@ -23,7 +23,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
                 {
                     KeyBoardInput k => k.Symbol switch
                     {
-                        "" => ",", // Typo in comma
                         "<-" => "Backspace",
                         "Caps" => "Caps Lock",
                         " " => k.Name,
@@ -31,10 +30,22 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
                         "˄" => "Up",
                         "˃" => "Right",
                         "˅" => "Down",
+                        "ESC" => "Esc",
+                        "DEL" => "Delete",
+                        "HOME" => "Home",
                         _ => k.Symbol
                     },
                     KeyboardCombination => keyBoardInput.Name,
                     _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
+                },
+                IMouseInput mouseInput => mouseInput switch
+                {
+                    MouseButtonInput mouseButton => mouseButton.Id switch
+                    {
+                        "Left Click" => "Left Button",
+                    },
+                    _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
+
                 },
                 _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
             };

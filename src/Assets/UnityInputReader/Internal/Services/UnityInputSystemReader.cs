@@ -22,7 +22,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
         #region Variables
 
         private readonly InputDeviceIdentifier _deviceIdentifier;
-        private readonly Dictionary<IInput, UnityInput> _inputControlsLookup;
+        private readonly Dictionary<int, UnityInput> _inputControlsLookup;
 
         #endregion
 
@@ -64,7 +64,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 
                     return new
                     {
-                        IsTriggered = _inputControlsLookup.TryGetValue(inputActionPair.DeviceInput, out var unityInput)
+                        IsTriggered = _inputControlsLookup.TryGetValue(inputActionPair.InputId, out var unityInput)
                             && unityInput.TryGetInputPhase(out currentPhase) 
                             && inputActionPair.TriggerPhase.HasFlag(currentPhase),
                         UnityInput = unityInput,
@@ -74,8 +74,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                 })
                 .Where(v => v.IsTriggered);
 
-
-
             foreach (var activeInputActionPair in activeInputActionPairs)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -84,7 +82,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                 }
 
                 ActivateInput(context, activeInputActionPair.CurrentPhase, activeInputActionPair.Pair,
-                    _inputControlsLookup[activeInputActionPair.Pair.DeviceInput]);
+                    _inputControlsLookup[activeInputActionPair.Pair.InputId]);
             }
 
             return Task.CompletedTask;
@@ -102,16 +100,16 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
         /// <param name="inputs">The actual inputs that are being read by the input manager</param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        private Dictionary<IInput, UnityInput> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
+        private Dictionary<int, UnityInput> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
             IEnumerable<IInput> inputs) 
         {
             var device = InputSystem.devices.FirstOrDefault(inputDevice => inputDevice.deviceId == deviceIdentifier.DeviceId);
             if (device is null)
             {
-                return new Dictionary<IInput, UnityInput>();
+                return new Dictionary<int, UnityInput>();
             }
 
-            var deviceInputLookup = new Dictionary<IInput, UnityInput>();
+            var deviceInputLookup = new Dictionary<int, UnityInput>();
             var inputControlLookup = device.allControls.GroupBy(control => control.displayName)
                 .Select(controlGroup => controlGroup.First())
                 .ToDictionary(control => control.displayName);
@@ -130,7 +128,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                         break;
                 }
 
-                deviceInputLookup[input] = unityInput;
+                deviceInputLookup[input.Id] = unityInput;
             }
 
             return deviceInputLookup;
