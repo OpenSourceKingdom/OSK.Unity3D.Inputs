@@ -4,12 +4,9 @@ using OSK.Inputs;
 using OSK.Inputs.Models.Configuration;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Scripts;
-using System.Threading.Tasks;
 
 public class ExampleSceneContainer : SceneContainer
 {
-    public static ValueTask CompletedTask = new ValueTask(Task.CompletedTask);
-
     protected override void Configure(IServiceCollection services)
     {
         services.AddLogging();
@@ -21,18 +18,22 @@ public class ExampleSceneContainer : SceneContainer
 
             builder.AddInputDefinition("Test", definition =>
             {
-                definition.AddAction("Triggered", null, @event => CompletedTask);
-                definition.AddAction("Triggered2", null, @event => CompletedTask);
+                definition.AddAction("Triggered", null, @event => UnityValueTasks.CompletedTask);
+                definition.AddAction("Triggered2", null, @event => UnityValueTasks.CompletedTask);
+                definition.AddAction("Triggered3", null, @event => UnityValueTasks.CompletedTask);
+                definition.AddAction("Triggered4", null, @event => UnityValueTasks.CompletedTask);
 
                 definition.AddInputScheme("default", scheme =>
                 {
                     scheme.UseKeyboard(keyboard =>
                     {
                         keyboard.AssignStartAction(Keyboard.ExclamationPoint, "Triggered");
+                        keyboard.AssignEndAction(Keyboard.W, "Triggered2");
                     });
                     scheme.UseMouse(mouse =>
                     {
-                        mouse.AssignEndAction(Mouse.LeftClick, "Triggered2");
+                        mouse.AssignStartAction(Mouse.LeftClick, "Triggered4");
+                        mouse.AssignActiveAction(Mouse.RightClick, "Triggered3");
                     });
                 });
             });

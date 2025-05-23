@@ -1,28 +1,23 @@
-﻿using OSK.Inputs.Models.Configuration;
-using OSK.Inputs.Models.Inputs;
+﻿using OSK.Inputs.Models.Inputs;
 using OSK.Inputs.Models.Runtime;
 using OSK.Inputs.Ports;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
-using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
-using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
-using UnityEngine.Windows;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 {
-    internal class UnityInputSystemReader : IInputReader
+    internal class UnityInputSystemReader : IInputDeviceReader
     {
         #region Variables
 
         private readonly InputDeviceIdentifier _deviceIdentifier;
-        private readonly Dictionary<int, UnityInput> _inputControlsLookup;
+        private readonly Dictionary<int, UnityInput[]> _inputControlsLookup;
 
         #endregion
 
@@ -43,49 +38,43 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 
         #region IInputReader
 
-        public event Action<InputDeviceIdentifier> OnControllerDisconnected;
-        public event Action<InputDeviceIdentifier> OnControllerReconnected;
+        public event Action<InputDeviceIdentifier> OnDeviceDisconnected;
+        public event Action<InputDeviceIdentifier> OnDeviceConnected;
 
         public void Dispose()
         {
+            InputSystem.onDeviceChange -= OnHandleInputDeviceEvent;
         }
 
-        public Task ReadInputsAsync(UserInputReadContext context, CancellationToken cancellationToken = default)
+        public ValueTask ReadInputAsync(DeviceInputReadContext context, IInput input, CancellationToken cancellationToken = default)
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                return Task.FromCanceled(cancellationToken);
+                return UnityValueTasks.CompletedTask;
             }
 
-            var activeInputActionPairs = context.InputActionPairs
-                .Select(inputActionPair =>
-                {
-                    InputPhase currentPhase = InputPhase.Start;
-
-                    return new
-                    {
-                        IsTriggered = _inputControlsLookup.TryGetValue(inputActionPair.InputId, out var unityInput)
-                            && unityInput.TryGetInputPhase(out currentPhase) 
-                            && inputActionPair.TriggerPhase.HasFlag(currentPhase),
-                        UnityInput = unityInput,
-                        CurrentPhase = currentPhase,
-                        Pair = inputActionPair
-                    };
-                })
-                .Where(v => v.IsTriggered);
-
-            foreach (var activeInputActionPair in activeInputActionPairs)
+            if (_inputControlsLookup.TryGetValue(input.Id, out var unityInputs))
             {
-                if (cancellationToken.IsCancellationRequested)
+                var activeInput = unityInputs.Select(unityInput => new
                 {
-                    return Task.FromCanceled(cancellationToken);
-                }
+                    unityInput,
+                    IsActiveInput = unityInput.TryGetInputPhase(out var activePhase),
+                    Phase = activePhase
+                })
+                .FirstOrDefault(unityInput => unityInput.IsActiveInput);
 
-                ActivateInput(context, activeInputActionPair.CurrentPhase, activeInputActionPair.Pair,
-                    _inputControlsLookup[activeInputActionPair.Pair.InputId]);
+                if (activeInput is not null)
+                {
+                    // Don't need to check all the inputs if the input is triggered for of the same keys (i.e. left and right shift for shift)
+                    SetInputState(context, activeInput.unityInput, activeInput.Phase);
+                }
+                else
+                {
+                    context.SetInputState(input, InputPhase.Idle);
+                }
             }
 
-            return Task.CompletedTask;
+            return UnityValueTasks.CompletedTask;
         }
 
         #endregion
@@ -100,97 +89,88 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
         /// <param name="inputs">The actual inputs that are being read by the input manager</param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
-        private Dictionary<int, UnityInput> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
+        private Dictionary<int, UnityInput[]> CreateInputControllerLookup(InputDeviceIdentifier deviceIdentifier,
             IEnumerable<IInput> inputs) 
         {
             var device = InputSystem.devices.FirstOrDefault(inputDevice => inputDevice.deviceId == deviceIdentifier.DeviceId);
             if (device is null)
             {
-                return new Dictionary<int, UnityInput>();
+                return new Dictionary<int, UnityInput[]>();
             }
 
-            var deviceInputLookup = new Dictionary<int, UnityInput>();
+            InputSystem.onDeviceChange += OnHandleInputDeviceEvent;
+
+            var deviceInputLookup = new Dictionary<int, UnityInput[]>();
             var inputControlLookup = device.allControls.GroupBy(control => control.displayName)
-                .Select(controlGroup => controlGroup.First())
-                .ToDictionary(control => control.displayName);
+                .ToDictionary(controlGroup => controlGroup.Key, controlGroup => controlGroup.ToArray());
 
-            foreach (var input in inputs)
+            foreach (var input in inputs.OfType<HardwareInput>())
             {
-                UnityInput unityInput;
-                switch (input)
-                {
-                    case CombinationInput combinationInput:
-                        var combinedInputs = combinationInput.Inputs.Select(deviceInput => GetUnityInput(inputControlLookup, deviceInput));
-                        unityInput = new UnityCombinationInput(combinedInputs);
-                        break;
-                    default:
-                        unityInput = GetUnityInput(inputControlLookup, input);
-                        break;
-                }
-
-                deviceInputLookup[input.Id] = unityInput;
+                var unityInputs = GetUnityInputs(inputControlLookup, input);
+                deviceInputLookup[input.Id] = unityInputs.ToArray();
             }
 
             return deviceInputLookup;
         }
 
-        private UnityInput GetUnityInput(Dictionary<string, InputControl> inputControlLookup, IInput deviceInput)
+        private IEnumerable<UnityInput> GetUnityInputs(Dictionary<string, InputControl[]> inputControlLookup, IInput deviceInput)
         {
-            var inputKey = deviceInput.GetUnityInputName();
-            if (!inputControlLookup.TryGetValue(inputKey, out var inputControl))
-            {
-                throw new InvalidOperationException($"The expected input {deviceInput.Name} was not found in the device input lookup");
-            }
+            var inputKeys = deviceInput.GetUnityInputNames();
 
-            return deviceInput switch
+            foreach (var inputKey in inputKeys)
             {
-                MouseScrollInput scrollInput => new UnityDeltaInput(scrollInput, (DeltaControl)inputControl),
-                AnalogInput analogInput => new UnityStickInput(analogInput, (StickControl)inputControl),
-                HardwareInput hardwareInput => new UnityButtonInput(hardwareInput, (ButtonControl)inputControl),
-                TouchInput touchInput => new UnityTouchInput(touchInput, (TouchControl)inputControl),
-                SensorInput sensorInput => new UnitySensorInput(sensorInput, (Sensor)inputControl),
-                _ => throw new InvalidOperationException($"A valid input to unity input mapping did not exist for the input {deviceInput.Name} which is of type {deviceInput.GetType().FullName}.^")
-            };
+                if (!inputControlLookup.TryGetValue(inputKey, out var inputControlGroup))
+                {
+                    throw new InvalidOperationException($"The expected input key, {inputKey}, for input {deviceInput.Name} was not found in the device input lookup");
+                }
+
+                var inputControl = inputControlGroup.First();
+                yield return deviceInput switch
+                {
+                    MouseScrollInput scrollInput => new UnityDeltaInput(scrollInput, (DeltaControl)inputControl),
+                    AnalogInput analogInput => new UnityStickInput(analogInput, (StickControl)inputControl),
+                    HardwareInput hardwareInput => new UnityButtonInput(hardwareInput, (ButtonControl)inputControl),
+                    TouchInput touchInput => new UnityTouchInput(touchInput, (TouchControl)inputControl),
+                    SensorInput sensorInput => new UnitySensorInput(sensorInput, (Sensor)inputControl),
+                    _ => throw new InvalidOperationException($"A valid input to unity input mapping did not exist for the input {deviceInput.Name} which is of type {deviceInput.GetType().FullName}.^")
+                };
+            }
         }
-        private void ActivateInput(UserInputReadContext context, InputPhase triggerPhase,
-            InputActionMapPair inputActionMapPair, UnityInput input)
+        private void SetInputState(DeviceInputReadContext context, UnityInput input, InputPhase triggeredPhase)
         {
             var pointerInformation = GetPointerLocation(input);
             switch (input)
             {
                 case UnityButtonInput:
-                    context.ActivateInput(inputActionMapPair, triggerPhase, pointerInformation.CurrentPosition);
+                    context.SetInputState(input.DeviceInput, triggeredPhase, pointerInformation.CurrentPosition);
                     break;
                 case UnityStickInput stickInput:
                     var axisInputPowers = stickInput.InputControl.ReadValue();
-                    context.ActivateInput(inputActionMapPair, triggerPhase, pointerInformation.CurrentPosition,
-                        new float[] { axisInputPowers.x, axisInputPowers.y });
+                    context.SetInputState(input.DeviceInput, triggeredPhase, pointerInformation.CurrentPosition,
+                        axisInputPowers.x, axisInputPowers.y);
                     break;
                 case UnitySensorInput sensorInput:
-                    ActivateSensorInput(context, triggerPhase, inputActionMapPair, pointerInformation, sensorInput);
+                    SetSensorInputState(context, sensorInput, triggeredPhase, pointerInformation);
                     break;
                 case UnityTouchInput touchInput:
-                    context.ActivatePointerInput(inputActionMapPair, triggerPhase, pointerInformation,
-                        new InputPower(new float[] { touchInput.InputControl.pressure.value }));
+                    context.SetInputState(input.DeviceInput, triggeredPhase, pointerInformation,
+                        touchInput.InputControl.pressure.value);
                     break;
                 default:
                     throw new InvalidOperationException($"No mapping was configured to convert an active input of type {input.GetType().FullName} to an activated input data object.");
             }
         }
 
-        private void ActivateSensorInput(UserInputReadContext context, InputPhase triggerPhase,
-            InputActionMapPair inputActionMapPair, PointerInformation pointerInformation, UnitySensorInput sensorInput)
+        private void SetSensorInputState(DeviceInputReadContext context, UnitySensorInput sensorInput, InputPhase triggerPhase,
+            PointerInformation pointerInformation)
         {
             switch (sensorInput.InputControl)
             {
                 case Accelerometer accelerometer:
-                    context.ActivateInput(inputActionMapPair, triggerPhase, pointerInformation.CurrentPosition, 
-                        new float[]
-                        {
-                            accelerometer.acceleration.value.x, 
-                            accelerometer.acceleration.value.y, 
-                            accelerometer.acceleration.value.z
-                        });
+                    context.SetInputState(sensorInput.DeviceInput, triggerPhase, pointerInformation.CurrentPosition,
+                            accelerometer.acceleration.value.x,
+                            accelerometer.acceleration.value.y,
+                            accelerometer.acceleration.value.z);
                     break;
                 default:
                     throw new NotSupportedException($"Sensor input {sensorInput.InputControl.GetType().FullName} is not currently supported");
@@ -205,6 +185,27 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
                     new System.Numerics.Vector2[] { touchInput.InputControl.startPosition.value.ToNumericVector() }),
                 _ => new PointerInformation(PointerInformation.DefaultPointerId, new System.Numerics.Vector2[] { UnityEngine.InputSystem.Mouse.current.position.value.ToNumericVector() })
             };
+        }
+
+        private void OnHandleInputDeviceEvent(InputDevice device, InputDeviceChange change)
+        {
+            if (device.deviceId != _deviceIdentifier.DeviceId)
+            {
+                return;
+            }
+
+            switch (change)
+            {
+                case InputDeviceChange.Added:
+                    OnDeviceConnected?.Invoke(_deviceIdentifier);
+                    break;
+                case InputDeviceChange.Disconnected:
+                    OnDeviceDisconnected?.Invoke(_deviceIdentifier);
+                    break;
+                case InputDeviceChange.Reconnected:
+                    OnDeviceConnected?.Invoke(_deviceIdentifier);
+                    break;
+            }
         }
 
         #endregion

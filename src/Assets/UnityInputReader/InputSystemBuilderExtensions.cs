@@ -1,11 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using OSK.Inputs.Ports;
-using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using OSK.Inputs.Ports;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
 {

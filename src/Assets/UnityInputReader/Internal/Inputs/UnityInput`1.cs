@@ -1,9 +1,4 @@
 ﻿using OSK.Inputs.Models.Inputs;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine.InputSystem;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
@@ -14,8 +9,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
     {
         #region Variables
 
-        public TInput DeviceInput { get; }
-
         public TInputControl InputControl { get; }
 
         #endregion
@@ -23,8 +16,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
         #region Constructors
 
         public UnityInput(TInput input, TInputControl inputControl)
+            : base(input, inputControl.displayName)
         {
-            DeviceInput = input;
             InputControl = inputControl;
         }
 

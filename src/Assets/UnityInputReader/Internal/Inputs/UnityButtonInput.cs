@@ -1,11 +1,4 @@
 ﻿using OSK.Inputs.Models.Inputs;
-using OSK.Inputs.Models.Runtime;
-using OSK.Inputs.Options;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine.InputSystem.Controls;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs

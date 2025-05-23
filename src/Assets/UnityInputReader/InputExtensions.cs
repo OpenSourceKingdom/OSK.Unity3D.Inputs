@@ -2,53 +2,66 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using UnityEngine;
 using UnityEngine.InputSystem;
+using Keyboard = OSK.Inputs.Models.Configuration.Keyboard;
+using Mouse = OSK.Inputs.Models.Configuration.Mouse;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
 {
     public static class InputExtensions
     {
-        public static string GetUnityInputName(this IInput input)
+        private static Dictionary<string, Dictionary<int, string[]>> s_inputNameOverrideLookup = GetOverrideInputKeys()
+            .GroupBy(kvp => kvp.Key.DeviceType)
+            .ToDictionary(kvpGroup => kvpGroup.Key, kvpGroup => kvpGroup.ToDictionary(kvp => kvp.Key.Id, kvp => kvp.Value));
+
+        public static string[] GetUnityInputNames(this IInput input)
         {
             var gamePadInputs = Gamepad.all.SelectMany(pad => pad.allControls);
-            var keyboardInputs = Keyboard.current.allControls;
-            var mouseInputs = Mouse.current.allControls;
+            var keyboardInputs = UnityEngine.InputSystem.Keyboard.current.allControls;
+            var mouseInputs = UnityEngine.InputSystem.Mouse.current.allControls;
             var sensorInputs = InputSystem.devices;
+            if (s_inputNameOverrideLookup.TryGetValue(input.DeviceType, out var deviceOverrideLookup)
+                 && deviceOverrideLookup.TryGetValue(input.Id, out var customOverride))
+            {
+                return customOverride;
+            }
+
             return input switch
             {
                 IKeyboardInput keyBoardInput => keyBoardInput switch
                 {
-                    KeyBoardInput k => k.Symbol switch
-                    {
-                        "<-" => "Backspace",
-                        "Caps" => "Caps Lock",
-                        " " => k.Name,
-                        "˂" => "Left",
-                        "˄" => "Up",
-                        "˃" => "Right",
-                        "˅" => "Down",
-                        "ESC" => "Esc",
-                        "DEL" => "Delete",
-                        "HOME" => "Home",
-                        _ => k.Symbol
-                    },
-                    KeyboardCombination => keyBoardInput.Name,
-                    _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
+                    KeyBoardInput k => new string[] { k.Symbol },
+                    KeyboardCombination => new string[] { keyBoardInput.Name },
+                    _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName}, {input.Name}, to a Unity input could be found.")
                 },
-                IMouseInput mouseInput => mouseInput switch
-                {
-                    MouseButtonInput mouseButton => mouseButton.Id switch
-                    {
-                        "Left Click" => "Left Button",
-                    },
-                    _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
-
-                },
-                _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName} to a Unity input could be found.")
+                _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName}, {input.Name},  to a Unity input could be found.")
             };
         }
+
+        private static IEnumerable<KeyValuePair<IInput, string[]>> GetOverrideInputKeys()
+            => new List<KeyValuePair<IInput, string[]>>()
+            {
+                OverrideInputKey(Keyboard.BackSpace, "Backspace"),
+                OverrideInputKey(Keyboard.Caps, "Caps Lock"),
+                OverrideInputKey(Keyboard.Space, Keyboard.Space.Name),
+                OverrideInputKey(Keyboard.LeftArrow, "Left"),
+                OverrideInputKey(Keyboard.RightArrow, "Right"),
+                OverrideInputKey(Keyboard.UpArrow, "Up"),
+                OverrideInputKey(Keyboard.DownArrow, "Down"),
+                OverrideInputKey(Keyboard.Escape, "Esc"),
+                OverrideInputKey(Keyboard.Delete, "Delete"),
+                OverrideInputKey(Keyboard.Home, "Home"),
+                OverrideInputKey(Keyboard.Shift, "Shift", "Right Shift"),
+                OverrideInputKey(Keyboard.Alt, "Alt", "Right Alt"),
+                OverrideInputKey(Keyboard.Ctrl, "Ctrl", "Right Ctrl"),
+
+                OverrideInputKey(Mouse.LeftClick, "Left Button"),
+                OverrideInputKey(Mouse.RightClick, "Right Button"),
+                OverrideInputKey(Mouse.ScrollWheelClick, "Middle Button"),
+                OverrideInputKey(Mouse.ScrollWheel, "Scroll")
+            };
+
+        private static KeyValuePair<IInput, string[]> OverrideInputKey(IInput input, params string[] overrideNames)
+            => new KeyValuePair<IInput, string[]>(input, overrideNames);
     }
 }
