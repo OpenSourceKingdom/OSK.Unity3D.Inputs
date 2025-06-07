@@ -1,11 +1,13 @@
-﻿using OSK.Inputs.Models.Events;
+﻿using OSK.Functions.Outputs.Abstractions;
+using OSK.Functions.Outputs.Logging.Abstractions;
+using OSK.Inputs.Models.Events;
 using OSK.Inputs.Models.Runtime;
 using OSK.Inputs.Options;
 using OSK.Inputs.Ports;
-using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Models;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Attributes;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Ports;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -25,6 +27,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
         private bool _blockerPointerWithUI;
 
         private IInputManager _inputManager;
+        private IOutputFactory<UnityInputManager> _outputFactory;
 
         #endregion
 
@@ -63,7 +66,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         #region API
 
-        public event Action<UnityInputActivationContext> OnInputActivated;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceAdded;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceReconnected;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceDisconnected;
@@ -74,24 +76,31 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             set => _isInputPaused = value;
         }
 
-        public bool BlockPointerWithUI
-        {
-            get => _blockerPointerWithUI;
-            set => _blockerPointerWithUI = value;
-        }
+        public Player GetPlayer(int playerId)
+            => ToPlayer(_inputManager.GetApplicationInputUser(playerId));
 
-        public void JoinPlayer(int playerId, InputDevice device)
+        public IEnumerable<Player> GetPlayers()
+            => _inputManager.GetApplicationInputUsers().Select(ToPlayer);
+
+        public async Task<IOutput<Player>> JoinPlayerAsync(int playerId, InputDevice device)
         {
-            _inputManager.JoinUserAsync(playerId, new JoinUserOptions()
+            var joinOutput = await _inputManager.JoinUserAsync(playerId, new JoinUserOptions()
             {
                 DeviceIdentifiers = new InputDeviceIdentifier[] { device.GetDeviceIdentifier() }
-            }); 
+            });
+            if (!joinOutput.IsSuccessful)
+            {
+                return joinOutput.AsOutput<Player>();
+            }
+
+            return _outputFactory.Succeed(ToPlayer(joinOutput.Value));
         }
 
+        public void PairDevice(int playerId, InputDeviceIdentifier deviceIdentifier)
+            => _inputManager.PairDevice(playerId, deviceIdentifier);
+
         public void RemovePlayer(int playerId)
-        {
-            _inputManager.RemoveUser(playerId);
-        }
+            => _inputManager.RemoveUser(playerId);
 
         public async Task InitializePlayers(int playerCount)
         {
@@ -111,10 +120,21 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         #region Helpers
 
+        private Player ToPlayer(IApplicationInputUser applicationInputUser)
+        {
+            var deviceIdentifiers = applicationInputUser.DeviceIdentifiers.Select(identifier => identifier.DeviceId).ToHashSet();
+            return new Player
+            {
+                Id = applicationInputUser.Id,
+                InputDevices = InputSystem.devices.Where(device => deviceIdentifiers.Contains(device.deviceId))
+            };
+        }
+
         [ContainerInject]
-        private void Initialize(IInputManager inputManager)
+        private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory)
         {
             _inputManager = inputManager;
+            _outputFactory = outputFactory;
 
             _inputManager.OnInputDeviceAdded += OnInputDeviceAdded;
             _inputManager.OnInputDeviceReconnected += OnInputDeviceReconnected;
