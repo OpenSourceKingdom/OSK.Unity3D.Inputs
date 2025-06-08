@@ -1,4 +1,5 @@
-﻿using OSK.Inputs.Models.Inputs;
+﻿using OSK.Inputs.Models.Configuration;
+using OSK.Inputs.Models.Inputs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,10 +17,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
 
         public static string[] GetUnityInputNames(this IInput input)
         {
-            var gamePadInputs = Gamepad.all.SelectMany(pad => pad.allControls);
-            var keyboardInputs = UnityEngine.InputSystem.Keyboard.current.allControls;
-            var mouseInputs = UnityEngine.InputSystem.Mouse.current.allControls;
-            var sensorInputs = InputSystem.devices;
             if (s_inputNameOverrideLookup.TryGetValue(input.DeviceType, out var deviceOverrideLookup)
                  && deviceOverrideLookup.TryGetValue(input.Id, out var customOverride))
             {
@@ -30,9 +27,15 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
             {
                 IKeyboardInput keyBoardInput => keyBoardInput switch
                 {
-                    KeyBoardInput k => new string[] { k.Symbol },
+                    KeyBoardInput key => new string[] { key.Symbol },
                     KeyboardCombination => new string[] { keyBoardInput.Name },
                     _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName}, {input.Name}, to a Unity input could be found.")
+                },
+                IGamePadInput gamePadInput => gamePadInput switch 
+                {
+                    GamePadButtonInput buttonInput => new string[] { buttonInput.Name },
+                    GamePadStickInput stickInput => new string[] { gamePadInput.Name },
+                    _ => throw new InvalidOperationException("No mapping for input of type {input.GetType().FullName}, {input.Name}, to a Unity input could be found.")
                 },
                 _ => throw new InvalidOperationException($"No mapping for input of type {input.GetType().FullName}, {input.Name},  to a Unity input could be found.")
             };
@@ -58,7 +61,23 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
                 OverrideInputKey(Mouse.LeftClick, "Left Button"),
                 OverrideInputKey(Mouse.RightClick, "Right Button"),
                 OverrideInputKey(Mouse.ScrollWheelClick, "Middle Button"),
-                OverrideInputKey(Mouse.ScrollWheel, "Scroll")
+                OverrideInputKey(Mouse.ScrollWheel, "Scroll"),
+
+                OverrideInputKey(GamePadDevice.X, "Cross"),
+                OverrideInputKey(GamePadDevice.LeftBumper, "L1"),
+                OverrideInputKey(GamePadDevice.RightBumper, "R1"),
+                OverrideInputKey(GamePadDevice.LeftTrigger, "L2"),
+                OverrideInputKey(GamePadDevice.RightTrigger, "R2"),
+                OverrideInputKey(GamePadDevice.LeftJoyStickClick, "L3"),
+                OverrideInputKey(GamePadDevice.RightJoyStickClick, "R3"),
+                OverrideInputKey(GamePadDevice.LeftJoyStick, "Left Stick"),
+                OverrideInputKey(GamePadDevice.RightJoyStick, "Right Stick"),
+                OverrideInputKey(GamePadDevice.Menu, "Options"),
+                OverrideInputKey(GamePadDevice.Options, "Share"),
+                OverrideInputKey(GamePadDevice.DpadLeft, "D-Pad/left"),
+                OverrideInputKey(GamePadDevice.DpadRight, "D-Pad/right"),
+                OverrideInputKey(GamePadDevice.DpadUp, "D-Pad/up"),
+                OverrideInputKey(GamePadDevice.DpadDown, "D-Pad/down")
             };
 
         private static KeyValuePair<IInput, string[]> OverrideInputKey(IInput input, params string[] overrideNames)

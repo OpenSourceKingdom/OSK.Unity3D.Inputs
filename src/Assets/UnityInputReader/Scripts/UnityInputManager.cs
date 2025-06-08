@@ -84,9 +84,10 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         public async Task<IOutput<Player>> JoinPlayerAsync(int playerId, InputDevice device)
         {
+            var deviceIdentifier = device.TryGetDeviceIdentifier();
             var joinOutput = await _inputManager.JoinUserAsync(playerId, new JoinUserOptions()
             {
-                DeviceIdentifiers = new InputDeviceIdentifier[] { device.GetDeviceIdentifier() }
+                DeviceIdentifiers = deviceIdentifier is not null ? new InputDeviceIdentifier[] { deviceIdentifier.Value } : Array.Empty<InputDeviceIdentifier>()
             });
             if (!joinOutput.IsSuccessful)
             {
@@ -106,7 +107,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
         {
             if (playerCount == 1)
             {
-                var deviceIdentifiers = InputSystem.devices.Select(device => device.GetDeviceIdentifier());
+                var deviceIdentifiers = InputSystem.devices.Select(device => device.TryGetDeviceIdentifier()).Where(deviceidentifier => deviceidentifier is not null).Cast<InputDeviceIdentifier>();
                 await _inputManager.JoinUserAsync(playerCount, new JoinUserOptions()
                 {
                     DeviceIdentifiers = deviceIdentifiers

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 
@@ -115,13 +116,32 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Services
 
         private IEnumerable<UnityInput> GetUnityInputs(Dictionary<string, InputControl[]> inputControlLookup, IInput deviceInput)
         {
-            var inputKeys = deviceInput.GetUnityInputNames();
-
-            foreach (var inputKey in inputKeys)
+            var unityInputNames = deviceInput.GetUnityInputNames();
+            foreach (var unityInputName in unityInputNames)
             {
-                if (!inputControlLookup.TryGetValue(inputKey, out var inputControlGroup))
+                var keyParts = unityInputName == "/" 
+                    ? new string[] { unityInputName }
+                    : unityInputName.Split("/");
+                if (!inputControlLookup.TryGetValue(keyParts[0], out var inputControlGroup))
                 {
-                    throw new InvalidOperationException($"The expected input key, {inputKey}, for input {deviceInput.Name} was not found in the device input lookup");
+                    Debug.Log($"The expected input key, {unityInputName}, for input {deviceInput.Name} was not found in the device input lookup");
+                    continue;
+                }
+                
+                for (var i = 0; i < inputControlGroup.Length; i++)
+                {
+                    var input = inputControlGroup[i];
+                    if (input is DpadControl dpadControl && keyParts.Length > 1)
+                    {
+                        inputControlGroup[i] = keyParts[1] switch
+                        {
+                            "left" => dpadControl.left,
+                            "right" => dpadControl.right,
+                            "up" => dpadControl.up,
+                            "down" => dpadControl.down,
+                            _ => inputControlGroup[i]
+                        };
+                    }
                 }
 
                 var inputControl = inputControlGroup.First();

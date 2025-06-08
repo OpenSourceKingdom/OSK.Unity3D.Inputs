@@ -15,6 +15,7 @@ public class ExampleSceneContainer : SceneContainer
         {
             builder.AddKeyboard();
             builder.AddMouse();
+            builder.AddPlayStationController();
 
             builder.AddInputDefinition("Test", definition =>
             {
@@ -34,6 +35,17 @@ public class ExampleSceneContainer : SceneContainer
                     {
                         mouse.AssignStartAction(Mouse.LeftClick, "Triggered4");
                         mouse.AssignActiveAction(Mouse.RightClick, "Triggered3");
+                    });
+                });
+
+                definition.AddInputScheme("default", scheme =>
+                {
+                    scheme.UsePlayStationGamePad(dualShockGamePad =>
+                    {
+                        dualShockGamePad.AssignStartAction(GamePadDevice.Square, "Triggered");
+                        dualShockGamePad.AssignEndAction(GamePadDevice.X, "Triggered2");
+                        dualShockGamePad.AssignActiveAction(GamePadDevice.LeftTrigger, "Triggered3");
+                        dualShockGamePad.AssignActiveAction(GamePadDevice.RightJoyStick, "Triggered4");
                     });
                 });
             });
