@@ -38,7 +38,6 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0, g: 0, b: 0, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -245,7 +244,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5c9a20728b413c6419c4feb384c6238a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _blockerPointerWithUI: 0
+  _overrideInjectedInputOptions: 1
+  _inputOptions:
+    PlayerJoinOptions:
+      DeviceJoinBehavior: 0
+      MaxInputControllersPerPlayer:
+        _value: 2
+        _hasValue: 1
 --- !u!114 &1497492053
 MonoBehaviour:
   m_ObjectHideFlags: 0

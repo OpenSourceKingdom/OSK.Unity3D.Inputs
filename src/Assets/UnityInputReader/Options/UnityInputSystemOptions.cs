@@ -1,7 +1,10 @@
+using System;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Models;
+using UnityEngine;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options
 {
+    [Serializable]
     public class UnityInputSystemOptions
     {
         #region Static
@@ -19,7 +22,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options
 
         #region Variables
 
-        public DeviceJoinOptions PlayerJoinOptions { get; set; }
+        [SerializeField]
+        public DeviceJoinOptions PlayerJoinOptions;
 
         #endregion
     }

@@ -1,7 +1,6 @@
 ﻿using System;
 using OSK.Inputs.Ports;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options;
-using UnityEngine.InputSystem;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader
 {

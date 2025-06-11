@@ -26,7 +26,6 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
     {
         #region Variables
 
-        private bool _initialized = false;
         private bool _isRunning = false;
 
         private bool _isInputPaused;
@@ -64,7 +63,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         private async void Update()
         {
-            if (!_initialized || IsInputPaused)
+            if (IsInputPaused)
             {
                 return;
             }
@@ -156,46 +155,48 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
                 return;
             }
 
-            var isNewUser = false;
+            var isNewUser = true;
             InputUser deviceUser;
             if (existingUser is null)
             {
                 // Want to find a user that needs the device to complete their current controller
-                var userWithControllerMissingDevice = _inputManager.GetApplicationInputUsers()
-                    .Select(user =>
+                // Tuple Data: AppUser, AppUser Needs Device to Complete a Controller, Total Valid Controllers AppUser currently possesses
+                Tuple<IApplicationInputUser, bool, int> existingAppUserData = null;
+                foreach (var appUser in _inputManager.GetApplicationInputUsers())
+                {
+                    var userDeviceNameLookup = appUser.DeviceIdentifiers.Select(identifier => identifier.DeviceName).ToHashSet();
+                    var player = InputUser.all.First(inputUser => inputUser.id == appUser.Id);
+
+                    var totalValidControllers = GetTotalValidInputControllersForUser(player);
+                    var needsDeviceForController = controller.DeviceNames.Any(userDeviceNameLookup.Contains) && !userDeviceNameLookup.Contains(newDeviceIdentifier.Value.DeviceName);
+                    if ((existingAppUserData is null || totalValidControllers < existingAppUserData.Item3)
+                         && needsDeviceForController)
                     {
-                        var userDeviceNameLookup = user.DeviceIdentifiers.Select(identifier => identifier.DeviceName).ToHashSet();
+                        existingAppUserData = new Tuple<IApplicationInputUser, bool, int>(appUser, needsDeviceForController, totalValidControllers);
+                    }
+                }
+                
+                // Only need to add a device to an existing app user if that user is currently missing a device for their input controller,
+                // otherwise we'll create a new user until we hit the limit for local users at which point we'll proceed to adding new devices to previous users
+                if (existingAppUserData is not null && !existingAppUserData.Item2 && _inputManager.GetApplicationInputUsers().Count() < _inputManager.Configuration.MaxLocalUsers)
+                {
+                    existingAppUserData = null;
+                }
 
-                        return new
-                        {
-                            user,
-                            MissingControllerDeviceCount = controller.DeviceNames.Where(deviceName => !userDeviceNameLookup.Contains(deviceName)).Count(),
-                            HasDeviceForController = userDeviceNameLookup.Contains(newDeviceIdentifier.Value.DeviceName)
-                        };
-                    })
-                    .Where(userData => !userData.HasDeviceForController)
-                    .OrderBy(userData => userData.MissingControllerDeviceCount)
-                    .FirstOrDefault();
-
-                isNewUser = userWithControllerMissingDevice is null;
+                isNewUser = existingAppUserData is null;
                 deviceUser = isNewUser
                     ? InputUser.CreateUserWithoutPairedDevices()
-                    : InputUser.all.First(player => player.id == userWithControllerMissingDevice.user.Id);
+                    : InputUser.all.First(player => player.id == existingAppUserData.Item1.Id);
             }
             else
             {
                 deviceUser = existingUser.Value;
+                isNewUser = false;
             }
 
             if (_inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.HasValue)
             {
-                var userDeviceLookup = deviceUser.pairedDevices.Select(deviceUser => deviceUser.TryGetDeviceIdentifier())
-                    .Where(identifier => identifier is not null)
-                    .Select(identifier => identifier.Value.DeviceName)
-                    .ToHashSet();
-
-                var totalValidInputControllersForUser = _inputManager.Configuration.InputControllers.Count(controller => controller.DeviceNames.All(userDeviceLookup.Contains));
-                if (totalValidInputControllersForUser >= _inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.Value)
+                if (GetTotalValidInputControllersForUser(deviceUser) >= _inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.Value)
                 {
                     Debug.LogWarning($"User {deviceUser.id} already has the maximum number of input controllers ({_inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.Value}) assigned. Cannot pair device {device.displayName}.");
                     return;
@@ -217,6 +218,8 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
                 }
 
                 var newPlayer = UpsertPlayer(deviceUser);
+
+                Debug.Log($"Device {device.displayName} paired to new user with id {deviceUser.id}.");
                 OnPlayerJoined?.Invoke(new PlayerJoinedEvent()
                 {
                     NewPlayer = newPlayer
@@ -224,8 +227,32 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             }
             else
             {
-                _inputManager.PairDevice(deviceUser.index, newDeviceIdentifier.Value);
+                _inputManager.PairDevice((int)deviceUser.id, newDeviceIdentifier.Value);
                 UpsertPlayer(deviceUser);
+
+                Debug.Log($"Device {device.displayName} paired to existing user with id {deviceUser.id}.");
+            }
+        }
+
+        public async Task UnpairDeviceAsync(InputDevice device)
+        {
+            var inputUser = InputUser.FindUserPairedToDevice(device);
+            if (inputUser.HasValue)
+            {
+                _inputManager.RemoveUser((int)inputUser.Value.id);
+                inputUser.Value.UnpairDevice(device);
+
+                var joinUserOutput = await _inputManager.JoinUserAsync((int)inputUser.Value.id, new JoinUserOptions()
+                {
+                    DeviceIdentifiers = inputUser.Value.pairedDevices.Select(d => d.TryGetDeviceIdentifier())
+                                            .Where(identifier => identifier is not null).Select(identifier => identifier.Value).ToArray()
+                });
+                
+                if (!joinUserOutput.IsSuccessful)
+                {
+                    inputUser.Value.UnpairDevicesAndRemoveUser();
+                    Debug.LogError($"Failed to complete depairing process as expected for user {inputUser.Value.id} with device {device.displayName}. Input User will be entirely removed. Error: {joinUserOutput.GetErrorString()}");
+                }
             }
         }
 
@@ -290,6 +317,16 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             return player;
         }
 
+        private int GetTotalValidInputControllersForUser(InputUser user)
+        {
+            var userDeviceLookup = user.pairedDevices.Select(deviceUser => deviceUser.TryGetDeviceIdentifier())
+                .Where(identifier => identifier is not null)
+                .Select(identifier => identifier.Value.DeviceName)
+                .ToHashSet();
+
+            return _inputManager.Configuration.InputControllers.Count(controller => controller.DeviceNames.All(userDeviceLookup.Contains));
+        }
+
         [ContainerInject]
         private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory, IOptions<UnityInputSystemOptions> inputSystemOptions)
         {
@@ -297,7 +334,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             _outputFactory = outputFactory;
             _inputOptions = _overrideInjectedInputOptions
                 ? _inputOptions
-                : inputSystemOptions.Value;
+                : inputSystemOptions.Value ?? UnityInputSystemOptions.Default;
 
             _inputManager.OnInputDeviceAdded += OnInputDeviceAdded;
             _inputManager.OnInputDeviceReconnected += OnInputDeviceReconnected;

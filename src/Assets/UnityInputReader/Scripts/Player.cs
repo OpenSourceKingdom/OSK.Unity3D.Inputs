@@ -1,7 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using OSK.Inputs.Models.Runtime;
 using UnityEngine.InputSystem;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts

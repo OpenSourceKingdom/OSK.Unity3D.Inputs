@@ -1,18 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Models;
+using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Shared;
+using UnityEngine;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options
 {
     /// <summary>
     /// Sets the behaviors for players when they attempt to join the game.
     /// </summary>
+    [Serializable]
     public class DeviceJoinOptions
     {
-        public DeviceJoinBehavior DeviceJoinBehavior { get; set; }
+        public DeviceJoinBehavior DeviceJoinBehavior;
 
         /// <summary>
         /// Determines the maximum number of input controllers that can be associated to a user. If null, there is no limit.
@@ -26,6 +25,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options
         ///     <item>An Input Controller is a group of <see cref="UnityEngine.InputSystem.InputDevice"/>s that represent a single input source. For example, a keyboard and mouse would act as a single input controller in most use cases, whereas a GamePad can be a single input controller on its own.</item>
         /// </list>
         /// </summary>
-        public int? MaxInputControllersPerPlayer { get; set; }
+        [SerializeField]
+        public UnityNullable<int> MaxInputControllersPerPlayer;
     }
 }

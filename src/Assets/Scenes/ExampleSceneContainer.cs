@@ -16,6 +16,7 @@ public class ExampleSceneContainer : SceneContainer
             builder.AddKeyboard();
             builder.AddMouse();
             builder.AddPlayStationController();
+            builder.WithMaxLocalUsers(2);
 
             builder.AddInputDefinition("Test", definition =>
             {

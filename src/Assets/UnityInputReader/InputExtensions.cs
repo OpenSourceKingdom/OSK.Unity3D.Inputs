@@ -3,7 +3,6 @@ using OSK.Inputs.Models.Inputs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine.InputSystem;
 using Keyboard = OSK.Inputs.Models.Configuration.Keyboard;
 using Mouse = OSK.Inputs.Models.Configuration.Mouse;
 
