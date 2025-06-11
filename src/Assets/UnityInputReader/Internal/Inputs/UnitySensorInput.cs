@@ -29,7 +29,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
             {
                 inputPhase = InputControl.wasUpdatedThisFrame
                     ? InputPhase.End
-                    : InputPhase.Start;
+                    : InputPhase.Idle;
                 _sensorInputStarted = false;
 
                 return inputPhase == InputPhase.End;

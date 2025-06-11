@@ -12,7 +12,9 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         public int Id { get; internal set; }
 
-        public IEnumerable<InputDevice> InputDevices { get; internal set; }
+        public IReadOnlyCollection<InputDevice> InputDevices { get; internal set; }
+
+        public Dictionary<string, object> DataContext { get; internal set; }
 
         #endregion
     }

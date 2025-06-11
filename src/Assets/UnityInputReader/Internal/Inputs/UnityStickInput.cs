@@ -25,17 +25,16 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Internal.Inputs
 
             if (InputControl.CheckStateIsAtDefaultIgnoringNoise())
             {
-                inputPhase = currentValue.magnitude == previousValue.magnitude 
-                    ? InputPhase.Start
+                inputPhase = previousValue.magnitude == 0 
+                    ? InputPhase.Idle
                     : InputPhase.End;
 
                 return inputPhase == InputPhase.End;
             }
 
-            if (currentValue.magnitude == previousValue.magnitude)
-            {
-                inputPhase = InputPhase.Active;
-            }
+            inputPhase = previousValue.magnitude == 0
+                ? InputPhase.Start
+                : InputPhase.Active;
 
             return true;
         }

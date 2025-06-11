@@ -1,9 +1,13 @@
-﻿using OSK.Functions.Outputs.Abstractions;
+﻿using Microsoft.Extensions.Options;
+using OSK.Functions.Outputs.Abstractions;
 using OSK.Functions.Outputs.Logging.Abstractions;
 using OSK.Inputs.Models.Events;
 using OSK.Inputs.Models.Runtime;
 using OSK.Inputs.Options;
 using OSK.Inputs.Ports;
+using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Events;
+using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Models;
+using OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Attributes;
 using OSK.Unity3D.NetCollections.Assets.Plugins.NetCollections.Ports;
 using System;
@@ -12,6 +16,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.InputSystem.Users;
+using UnityEngine.InputSystem.Utilities;
 
 namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 {
@@ -23,11 +30,16 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
         private bool _isRunning = false;
 
         private bool _isInputPaused;
+
         [SerializeField]
-        private bool _blockerPointerWithUI;
+        private bool _overrideInjectedInputOptions;
+        [SerializeField]
+        private UnityInputSystemOptions _inputOptions;
 
         private IInputManager _inputManager;
         private IOutputFactory<UnityInputManager> _outputFactory;
+
+        private Dictionary<int, Player> _players = new();
 
         #endregion
 
@@ -35,8 +47,19 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         private async void Start()
         {
-            await InitializePlayers(1);
-            _initialized = true;
+            if (_inputOptions.PlayerJoinOptions is not null
+                 && _inputOptions.PlayerJoinOptions.DeviceJoinBehavior is DeviceJoinBehavior.Automatic)
+            {
+                foreach (var unpairedDevice in InputUser.GetUnpairedInputDevices())
+                {
+                    await PairDeviceToUserAsync(unpairedDevice);
+                }
+            }
+        }
+
+        private void OnDestroy()
+        {
+            InputUser.onUnpairedDeviceUsed -= HandleUnpairedDeviceInputReceived;
         }
 
         private async void Update()
@@ -66,6 +89,7 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         #region API
 
+        public event Action<PlayerJoinedEvent> OnPlayerJoined;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceAdded;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceReconnected;
         public event Action<ApplicationUserInputDeviceEvent> OnInputDeviceDisconnected;
@@ -76,44 +100,156 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             set => _isInputPaused = value;
         }
 
+        /// <summary>
+        /// The total number of local players allowed in the game session
+        /// </summary>
+        public int TotalLocalPlayersAllowed => _inputManager.Configuration.MaxLocalUsers;
+
+        /// <summary>
+        /// Retrieves the <see cref="Player"/> of a given id
+        /// </summary>
+        /// <param name="playerId">The id for the player to get</param>
+        /// <returns>The player</returns>
         public Player GetPlayer(int playerId)
-            => ToPlayer(_inputManager.GetApplicationInputUser(playerId));
+            => _players[playerId];
 
+        /// <summary>
+        /// Returns the list of players currently in the local game session.
+        /// </summary>
+        /// <returns></returns>
         public IEnumerable<Player> GetPlayers()
-            => _inputManager.GetApplicationInputUsers().Select(ToPlayer);
+            => _players.Values;
 
-        public async Task<IOutput<Player>> JoinPlayerAsync(int playerId, InputDevice device)
+        /// <summary>
+        /// Attempts to pair a device to an existing or new player.
+        /// 
+        /// <br />
+        /// <br />
+        /// Notes:
+        /// <list type="bullet">
+        ///     <item>If no existing user is specified, an attempt will be made to find a current user that is missing a needed device, before creating a new user if none are found</item>
+        ///     <item>Devices will not be paired if the <see cref="UnityInputSystemOptions.PlayerJoinOptions"/> total controllers per useer is exceeded</item>
+        /// </list>
+        /// </summary>
+        /// <param name="device">The device to pair</param>
+        /// <param name="existingUser">A preferred user for the device to pair with</param>
+        /// <returns>A task representing the operation</returns>
+        public async Task PairDeviceToUserAsync(InputDevice device, InputUser? existingUser = null)
         {
-            var deviceIdentifier = device.TryGetDeviceIdentifier();
-            var joinOutput = await _inputManager.JoinUserAsync(playerId, new JoinUserOptions()
+            if (InputUser.FindUserPairedToDevice(device) is not null)
             {
-                DeviceIdentifiers = deviceIdentifier is not null ? new InputDeviceIdentifier[] { deviceIdentifier.Value } : Array.Empty<InputDeviceIdentifier>()
-            });
-            if (!joinOutput.IsSuccessful)
-            {
-                return joinOutput.AsOutput<Player>();
+                Debug.LogWarning($"Device {device.displayName} is already paired to a user.");
+                return;
             }
 
-            return _outputFactory.Succeed(ToPlayer(joinOutput.Value));
+            var newDeviceIdentifier = device.TryGetDeviceIdentifier();
+            if (newDeviceIdentifier is null)
+            {
+                Debug.LogError($"Device {device.displayName} does not have a valid device name mapping.");
+                return;
+            }
+
+            var controller = _inputManager.Configuration.InputControllers.FirstOrDefault(controller => controller.DeviceNames.Any(deviceName => deviceName == newDeviceIdentifier.Value.DeviceName));
+            if (controller is null)
+            {
+                Debug.LogError($"No input controller found for unity device {device.displayName} with device name {newDeviceIdentifier}.");
+                return;
+            }
+
+            var isNewUser = false;
+            InputUser deviceUser;
+            if (existingUser is null)
+            {
+                // Want to find a user that needs the device to complete their current controller
+                var userWithControllerMissingDevice = _inputManager.GetApplicationInputUsers()
+                    .Select(user =>
+                    {
+                        var userDeviceNameLookup = user.DeviceIdentifiers.Select(identifier => identifier.DeviceName).ToHashSet();
+
+                        return new
+                        {
+                            user,
+                            MissingControllerDeviceCount = controller.DeviceNames.Where(deviceName => !userDeviceNameLookup.Contains(deviceName)).Count(),
+                            HasDeviceForController = userDeviceNameLookup.Contains(newDeviceIdentifier.Value.DeviceName)
+                        };
+                    })
+                    .Where(userData => !userData.HasDeviceForController)
+                    .OrderBy(userData => userData.MissingControllerDeviceCount)
+                    .FirstOrDefault();
+
+                isNewUser = userWithControllerMissingDevice is null;
+                deviceUser = isNewUser
+                    ? InputUser.CreateUserWithoutPairedDevices()
+                    : InputUser.all.First(player => player.id == userWithControllerMissingDevice.user.Id);
+            }
+            else
+            {
+                deviceUser = existingUser.Value;
+            }
+
+            if (_inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.HasValue)
+            {
+                var userDeviceLookup = deviceUser.pairedDevices.Select(deviceUser => deviceUser.TryGetDeviceIdentifier())
+                    .Where(identifier => identifier is not null)
+                    .Select(identifier => identifier.Value.DeviceName)
+                    .ToHashSet();
+
+                var totalValidInputControllersForUser = _inputManager.Configuration.InputControllers.Count(controller => controller.DeviceNames.All(userDeviceLookup.Contains));
+                if (totalValidInputControllersForUser >= _inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.Value)
+                {
+                    Debug.LogWarning($"User {deviceUser.id} already has the maximum number of input controllers ({_inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.Value}) assigned. Cannot pair device {device.displayName}.");
+                    return;
+                }
+            }
+
+            deviceUser = InputUser.PerformPairingWithDevice(device, deviceUser);
+            if (isNewUser)
+            {
+                var joinUserOutput = await _inputManager.JoinUserAsync((int)deviceUser.id, new JoinUserOptions()
+                {
+                    DeviceIdentifiers = new InputDeviceIdentifier[] { newDeviceIdentifier.Value }
+                });
+                if (!joinUserOutput.IsSuccessful)
+                {
+                    deviceUser.UnpairDevicesAndRemoveUser();
+                    Debug.LogError($"Failed to join user with device {device.displayName}. Error: {joinUserOutput.GetErrorString()}");
+                    return;
+                }
+
+                var newPlayer = UpsertPlayer(deviceUser);
+                OnPlayerJoined?.Invoke(new PlayerJoinedEvent()
+                {
+                    NewPlayer = newPlayer
+                });
+            }
+            else
+            {
+                _inputManager.PairDevice(deviceUser.index, newDeviceIdentifier.Value);
+                UpsertPlayer(deviceUser);
+            }
         }
 
-        public void PairDevice(int playerId, InputDeviceIdentifier deviceIdentifier)
-            => _inputManager.PairDevice(playerId, deviceIdentifier);
-
+        /// <summary>
+        /// Removes the player from the input system and unpairs all devices associated with the player.
+        /// </summary>
+        /// <param name="playerId">The player id to remove</param>
         public void RemovePlayer(int playerId)
-            => _inputManager.RemoveUser(playerId);
-
-        public async Task InitializePlayers(int playerCount)
         {
-            if (playerCount == 1)
+            InputUser? user = null;
+            foreach (var inputUser in InputUser.all)
             {
-                var deviceIdentifiers = InputSystem.devices.Select(device => device.TryGetDeviceIdentifier()).Where(deviceidentifier => deviceidentifier is not null).Cast<InputDeviceIdentifier>();
-                await _inputManager.JoinUserAsync(playerCount, new JoinUserOptions()
+                if (inputUser.id == playerId)
                 {
-                    DeviceIdentifiers = deviceIdentifiers
-                });
+                    user = inputUser;
+                    break;
+                }
+            }
 
-                return;
+            if (user is not null)
+            {
+                user.Value.UnpairDevicesAndRemoveUser();
+                _inputManager.RemoveUser(playerId);
+                _players.Remove(playerId);
             }
         }
 
@@ -121,27 +257,56 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         #region Helpers
 
-        private Player ToPlayer(IApplicationInputUser applicationInputUser)
+        private void HandleUnpairedDeviceInputReceived(InputControl newDeviceInputControl, InputEventPtr inputEventPtr)
         {
-            var deviceIdentifiers = applicationInputUser.DeviceIdentifiers.Select(identifier => identifier.DeviceId).ToHashSet();
-            return new Player
+            if (_inputOptions.PlayerJoinOptions.DeviceJoinBehavior is not DeviceJoinBehavior.Manual)
             {
-                Id = applicationInputUser.Id,
-                InputDevices = InputSystem.devices.Where(device => deviceIdentifiers.Contains(device.deviceId))
-            };
+                Task.WaitAll(PairDeviceToUserAsync(newDeviceInputControl.device));
+            }
+        }
+
+        private void HandleInputDeviceChange(InputDevice device, InputDeviceChange deviceChange)
+        {
+            if (deviceChange is InputDeviceChange.Added && _inputOptions.PlayerJoinOptions.DeviceJoinBehavior is DeviceJoinBehavior.Automatic)
+            {
+                Task.WaitAll(PairDeviceToUserAsync(device));
+            }
+        }
+
+        private Player UpsertPlayer(InputUser user)
+        {
+            if (!_players.TryGetValue((int)user.id, out var player))
+            {
+                player = new Player()
+                {
+                    Id = (int)user.id,
+                    DataContext = new Dictionary<string, object>()
+                };
+            }
+
+            player.InputDevices = user.pairedDevices;
+            _players[(int)user.id] = player;
+
+            return player;
         }
 
         [ContainerInject]
-        private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory)
+        private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory, IOptions<UnityInputSystemOptions> inputSystemOptions)
         {
             _inputManager = inputManager;
             _outputFactory = outputFactory;
+            _inputOptions = _overrideInjectedInputOptions
+                ? _inputOptions
+                : inputSystemOptions.Value;
 
             _inputManager.OnInputDeviceAdded += OnInputDeviceAdded;
             _inputManager.OnInputDeviceReconnected += OnInputDeviceReconnected;
             _inputManager.OnInputDeviceDisconnected += OnInputDeviceDisconnected;
-        }
 
+            InputUser.onUnpairedDeviceUsed += HandleUnpairedDeviceInputReceived;
+            InputSystem.onDeviceChange += HandleInputDeviceChange;
+        }
+        
         #endregion
     }
 }

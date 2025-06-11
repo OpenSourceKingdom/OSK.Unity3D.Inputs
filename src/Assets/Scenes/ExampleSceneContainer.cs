@@ -19,10 +19,22 @@ public class ExampleSceneContainer : SceneContainer
 
             builder.AddInputDefinition("Test", definition =>
             {
-                definition.AddAction("Triggered", null, @event => UnityValueTasks.CompletedTask);
-                definition.AddAction("Triggered2", null, @event => UnityValueTasks.CompletedTask);
-                definition.AddAction("Triggered3", null, @event => UnityValueTasks.CompletedTask);
-                definition.AddAction("Triggered4", null, @event => UnityValueTasks.CompletedTask);
+                definition.AddAction("Triggered", null, @event =>
+                {
+                    return UnityValueTasks.CompletedTask; 
+                });
+                definition.AddAction("Triggered2", null, @event => 
+                {
+                    return UnityValueTasks.CompletedTask;
+                });
+                definition.AddAction("Triggered3", null, @event =>
+                {
+                    return UnityValueTasks.CompletedTask;
+                });
+                definition.AddAction("Triggered4", null, @event =>
+                {
+                    return UnityValueTasks.CompletedTask;
+                });
 
                 definition.AddInputScheme("default", scheme =>
                 {
