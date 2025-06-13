@@ -247,7 +247,7 @@ MonoBehaviour:
   _overrideInjectedInputOptions: 1
   _inputOptions:
     PlayerJoinOptions:
-      DeviceJoinBehavior: 0
+      DeviceJoinBehavior: 1
       MaxInputControllersPerPlayer:
         _value: 2
         _hasValue: 1

@@ -40,6 +40,14 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         private Dictionary<int, Player> _players = new();
 
+        private readonly static InputReadOptions _singleThreadedCustom = new InputReadOptions()
+        {
+            DeviceReadTime = TimeSpan.FromMilliseconds(100),
+            MaxConcurrentDevices = 1,
+            MaxConcurrenUsers = 1,
+            RunInputUsersInParallel = false
+        };
+
         #endregion
 
         #region MonoBehvaiour Overrides
@@ -58,7 +66,12 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
 
         private void OnDestroy()
         {
-            InputUser.onUnpairedDeviceUsed -= HandleUnpairedDeviceInputReceived;
+            if (_inputOptions.PlayerJoinOptions?.DeviceJoinBehavior is DeviceJoinBehavior.DeviceActivation)
+            {
+                InputUser.onUnpairedDeviceUsed -= HandleUnpairedDeviceInputReceived;
+                InputUser.listenForUnpairedDeviceActivity = 0;
+            }
+            InputSystem.onDeviceChange -= HandleInputDeviceChange;
         }
 
         private async void Update()
@@ -73,11 +86,11 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             }
 
             _isRunning = true;
-            var activationContext = await _inputManager.ReadInputsAsync(InputReadOptions.SingleThreaded);
+            var activationContext = await _inputManager.ReadInputsAsync(_singleThreadedCustom);
             await activationContext.ExecuteCommandsAsync((next, activationEvent) =>
             {
                 Debug.Log("Input received!");
-                Debug.Log($"Device: {activationEvent.Input.DeviceName} Phase: {activationEvent.Input.TriggeredPhase} Action: {activationEvent.InputAction.ActionKey} Input Name: {activationEvent.Input.Input.Name}");
+                Debug.Log($"UserId: {activationEvent.UserId} Device: {activationEvent.Input.DeviceName} Phase: {activationEvent.Input.TriggeredPhase} Action: {activationEvent.InputAction.ActionKey} Input Name: {activationEvent.Input.Input.Name}");
                 return next(activationEvent);
             });
 
@@ -340,7 +353,14 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             _inputManager.OnInputDeviceReconnected += OnInputDeviceReconnected;
             _inputManager.OnInputDeviceDisconnected += OnInputDeviceDisconnected;
 
-            InputUser.onUnpairedDeviceUsed += HandleUnpairedDeviceInputReceived;
+            // There is performance hit with using the DeviceActivation API within Unity, developers should be aware of this when attempting to use it
+            // https://docs.unity.cn/Packages/com.unity.inputsystem@1.1/api/UnityEngine.InputSystem.Users.InputUser.html
+            if (_inputOptions.PlayerJoinOptions.DeviceJoinBehavior is DeviceJoinBehavior.DeviceActivation)
+            {
+                InputUser.onUnpairedDeviceUsed += HandleUnpairedDeviceInputReceived;
+                InputUser.listenForUnpairedDeviceActivity = 1;
+            }
+
             InputSystem.onDeviceChange += HandleInputDeviceChange;
         }
         
