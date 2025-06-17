@@ -23,6 +23,9 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Options
         #region Variables
 
         [SerializeField]
+        public int MaxLocalUsers = 1;
+
+        [SerializeField]
         public DeviceJoinOptions PlayerJoinOptions;
 
         #endregion

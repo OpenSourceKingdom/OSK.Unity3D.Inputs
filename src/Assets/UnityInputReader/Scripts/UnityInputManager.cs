@@ -91,6 +91,21 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             {
                 Debug.Log("Input received!");
                 Debug.Log($"UserId: {activationEvent.UserId} Device: {activationEvent.Input.DeviceName} Phase: {activationEvent.Input.TriggeredPhase} Action: {activationEvent.InputAction.ActionKey} Input Name: {activationEvent.Input.Input.Name}");
+                
+                if (activationEvent.Input.DeviceName == Inputs.Models.Configuration.Mouse.MouseName)
+                {
+                    var player = GetPlayer(activationEvent.UserId);
+                    var mouseDevice = player.InputDevices
+                        .Select(device => new 
+                        { 
+                            Device = device,
+                            Idenitifier = device.TryGetDeviceIdentifier()
+                        })
+                        .Where(deviceIdentifier => deviceIdentifier.Idenitifier is not null)
+                        .First(deviceIdentifier => deviceIdentifier.Idenitifier.Value.DeviceName == Inputs.Models.Configuration.Mouse.MouseName);
+                    UnpairDevice(mouseDevice.Device);
+                }
+                
                 return next(activationEvent);
             });
 
@@ -247,24 +262,36 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
             }
         }
 
-        public async Task UnpairDeviceAsync(InputDevice device)
+        /// <summary>
+        /// Unpairs a device from the input system and removes it from the user it is paired to.
+        /// </summary>
+        /// <param name="device">The input device to remove</param>
+        public void UnpairDevice(InputDevice device)
         {
+            var deviceIdentifier = device.TryGetDeviceIdentifier();
+            if (deviceIdentifier is null)
+            {
+                Debug.LogError($"Device {device.displayName} does not have a valid device name mapping.");
+                return;
+            }
+
             var inputUser = InputUser.FindUserPairedToDevice(device);
             if (inputUser.HasValue)
             {
-                _inputManager.RemoveUser((int)inputUser.Value.id);
+                _inputManager.UnpairDevice(deviceIdentifier.Value);
                 inputUser.Value.UnpairDevice(device);
 
-                var joinUserOutput = await _inputManager.JoinUserAsync((int)inputUser.Value.id, new JoinUserOptions()
+                Debug.Log($"Unpaired device {deviceIdentifier.Value.DeviceName} with id {deviceIdentifier.Value.DeviceId}");
+
+                if (inputUser.Value.pairedDevices.Any())
                 {
-                    DeviceIdentifiers = inputUser.Value.pairedDevices.Select(d => d.TryGetDeviceIdentifier())
-                                            .Where(identifier => identifier is not null).Select(identifier => identifier.Value).ToArray()
-                });
-                
-                if (!joinUserOutput.IsSuccessful)
+                    UpsertPlayer(inputUser.Value);
+                }
+                else
                 {
-                    inputUser.Value.UnpairDevicesAndRemoveUser();
-                    Debug.LogError($"Failed to complete depairing process as expected for user {inputUser.Value.id} with device {device.displayName}. Input User will be entirely removed. Error: {joinUserOutput.GetErrorString()}");
+                    _inputManager.RemoveUser((int)inputUser.Value.id);
+                    _players.Remove((int)inputUser.Value.id);
+                    Debug.Log($"User {inputUser.Value.id} was removed because they had no input devices assigned to them");
                 }
             }
         }
@@ -341,10 +368,23 @@ namespace OSK.Inputs.UnityInputReader.Assets.UnityInputReader.Scripts
         }
 
         [ContainerInject]
-        private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory, IOptions<UnityInputSystemOptions> inputSystemOptions)
+        private void Initialize(IInputManager inputManager, IOutputFactory<UnityInputManager> outputFactory,
+            IOptions<UnityInputSystemOptions> inputSystemOptions)
         {
             _inputManager = inputManager;
             _outputFactory = outputFactory;
+
+            if (_overrideInjectedInputOptions && _inputOptions is not null)
+            {
+                _inputManager.Reconfigure(configuration =>
+                {
+                    if (_inputOptions.PlayerJoinOptions.MaxInputControllersPerPlayer.HasValue)
+                    {
+                        configuration.SetMaxLocalUsers(_inputOptions.MaxLocalUsers);
+                    }
+                });
+            }
+
             _inputOptions = _overrideInjectedInputOptions
                 ? _inputOptions
                 : inputSystemOptions.Value ?? UnityInputSystemOptions.Default;

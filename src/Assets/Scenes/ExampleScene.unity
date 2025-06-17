@@ -246,6 +246,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _overrideInjectedInputOptions: 1
   _inputOptions:
+    MaxLocalUsers: 2
     PlayerJoinOptions:
       DeviceJoinBehavior: 1
       MaxInputControllersPerPlayer:
