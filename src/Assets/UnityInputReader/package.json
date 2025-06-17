@@ -1,0 +1,10 @@
+{
+	"name": "com.opensourcekingdom.unityinputreader",
+	"displayName": "UnityInputReader",
+	"version": "0.0.1",
+	"unity": "6000.0",
+	"description": "Input Reader capable of reading inputs from multiple local users and allows developers to create input definitions in their code",
+	"dependencies": {
+		"com.opensourcekingdom.netcollections": "0.0.1" 
+	}
+}

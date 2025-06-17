@@ -1,0 +1,17 @@
+{
+    "name": "UnityInputReader",
+    "rootNamespace": "OSK.Inputs.UnityInputReader",
+    "references": [
+        "GUID:75469ad4d38634e559750d17036d5f7c",
+        "GUID:a1b81b4e4ad36444ca0cf501aeed1f55"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
